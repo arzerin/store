@@ -13,4 +13,9 @@ class Home extends BaseController
     {
         return 'Hello World';
     }
+
+    public function helloWorld2(): string
+    {
+        return 'Hello World2';
+    }
 }
