@@ -135,6 +135,8 @@ class Home extends BaseController
             'body' => 'This is a push notification from your store!',
             'icon' => '/favicon.ico',
             'badge' => '/favicon.ico',
+            'sound' => 'http://localhost/personal/store/public/beep.mp3',
+            'image' => 'http://localhost/personal/store/public/team1.jpg',
         ]);
 
         $sent = 0;

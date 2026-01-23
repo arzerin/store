@@ -16,8 +16,9 @@ class CreatePushSubscriptionsTable extends Migration
                 'auto_increment' => true,
             ],
             'endpoint' => [
-                'type'       => 'TEXT',
-                'null'       => false,
+                'type'       => 'VARCHAR',
+                'constraint' => 255,
+                'null'       => true,
             ],
             'public_key' => [
                 'type'       => 'VARCHAR',

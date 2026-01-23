@@ -9,62 +9,49 @@ class PushNotificationManager {
         this.isSupported = this.checkSupport();
     }
 
-    /**
-     * Check if push notifications are supported
-     */
     checkSupport() {
-        if (!('serviceWorker' in navigator)) {
-            console.warn('Service Workers not supported');
-            return false;
-        }
-
-        if (!('PushManager' in window)) {
-            console.warn('Push API not supported');
-            return false;
-        }
-
-        if (!('Notification' in window)) {
-            console.warn('Notifications not supported');
-            return false;
-        }
-
+        if (!('serviceWorker' in navigator)) return false;
+        if (!('PushManager' in window)) return false;
+        if (!('Notification' in window)) return false;
         return true;
     }
 
-    /**
-     * Initialize push notifications
-     */
     async init() {
         if (!this.isSupported) {
             throw new Error('Push notifications are not supported in this browser');
         }
 
-        try {
-            // Register service worker
-            this.registration = await navigator.serviceWorker.register('/service-worker.js');
-            console.log('Service Worker registered:', this.registration);
+        // Register service worker (RELATIVE PATH — IMPORTANT)
+        this.registration = await navigator.serviceWorker.register(
+            'http://localhost/personal/store/public/service-worker.js?v=1.0.3'
+        );
 
-            // Get VAPID public key from server
-            const response = await fetch('/push_public_key');
-            const data = await response.json();
-            this.publicKey = data.publicKey;
+        // Fetch VAPID public key
+        const response = await fetch('http://localhost/personal/store/public/push_public_key');
+        const data = await response.json();
 
-            if (!this.publicKey) {
-                throw new Error('VAPID public key not configured on server');
-            }
-
-            console.log('Push Notification Manager initialized');
-            return true;
-        } catch (error) {
-            console.error('Failed to initialize push notifications:', error);
-            throw error;
+        if (!data.publicKey) {
+            throw new Error('VAPID public key missing from server');
         }
+
+        this.publicKey = data.publicKey;
+        return true;
     }
 
     /**
-     * Request notification permission
+     * Request permission safely
      */
     async requestPermission() {
+        if (Notification.permission === 'granted') {
+            return 'granted';
+        }
+
+        if (Notification.permission === 'denied') {
+            throw new Error(
+                'Notifications are blocked. Please enable them in browser site settings.'
+            );
+        }
+
         const permission = await Notification.requestPermission();
 
         if (permission !== 'granted') {
@@ -74,156 +61,78 @@ class PushNotificationManager {
         return permission;
     }
 
-    /**
-     * Subscribe to push notifications
-     */
     async subscribe() {
         try {
-            // Ensure service worker is ready
             await navigator.serviceWorker.ready;
 
-            // Request permission
             await this.requestPermission();
 
-            // Get push subscription
-            let subscription = await this.registration.pushManager.getSubscription();
+            let subscription =
+                await this.registration.pushManager.getSubscription();
 
-            // If already subscribed, return existing subscription
             if (subscription) {
-                console.log('Already subscribed:', subscription);
                 return subscription;
             }
 
-            // Subscribe to push
             subscription = await this.registration.pushManager.subscribe({
                 userVisibleOnly: true,
-                applicationServerKey: this.urlBase64ToUint8Array(this.publicKey)
+                applicationServerKey: this.urlBase64ToUint8Array(this.publicKey),
             });
 
-            console.log('New subscription:', subscription);
-
-            // Send subscription to server
             await this.sendSubscriptionToServer(subscription);
 
             return subscription;
         } catch (error) {
-            console.error('Failed to subscribe:', error);
+            console.error(error);
             throw error;
         }
     }
 
-    /**
-     * Unsubscribe from push notifications
-     */
     async unsubscribe() {
-        try {
-            const subscription = await this.registration.pushManager.getSubscription();
+        const subscription =
+            await this.registration.pushManager.getSubscription();
 
-            if (!subscription) {
-                console.log('Not subscribed');
-                return true;
-            }
+        if (!subscription) return true;
 
-            // Unsubscribe
-            await subscription.unsubscribe();
+        await subscription.unsubscribe();
+        await this.sendUnsubscribeToServer(subscription);
 
-            // Notify server
-            await this.sendUnsubscribeToServer(subscription);
-
-            console.log('Unsubscribed successfully');
-            return true;
-        } catch (error) {
-            console.error('Failed to unsubscribe:', error);
-            throw error;
-        }
+        return true;
     }
 
-    /**
-     * Check if currently subscribed
-     */
     async isSubscribed() {
-        try {
-            const subscription = await this.registration.pushManager.getSubscription();
-            return subscription !== null;
-        } catch (error) {
-            console.error('Failed to check subscription status:', error);
-            return false;
-        }
+        const subscription =
+            await this.registration.pushManager.getSubscription();
+        return subscription !== null;
     }
 
-    /**
-     * Get current subscription
-     */
-    async getSubscription() {
-        try {
-            return await this.registration.pushManager.getSubscription();
-        } catch (error) {
-            console.error('Failed to get subscription:', error);
-            return null;
-        }
-    }
-
-    /**
-     * Send subscription to server
-     */
     async sendSubscriptionToServer(subscription) {
-        const response = await fetch('/push_subscribe', {
+        const response = await fetch('http://localhost/personal/store/public/push_subscribe', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(subscription.toJSON())
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(subscription.toJSON()),
         });
 
         if (!response.ok) {
-            throw new Error('Failed to send subscription to server');
+            throw new Error('Failed to store subscription on server');
         }
-
-        return await response.json();
     }
 
-    /**
-     * Send unsubscribe to server
-     */
     async sendUnsubscribeToServer(subscription) {
-        const response = await fetch('/push_unsubscribe', {
+        await fetch('http://localhost/personal/store/public/push_unsubscribe', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                endpoint: subscription.endpoint
-            })
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ endpoint: subscription.endpoint }),
         });
-
-        if (!response.ok) {
-            throw new Error('Failed to unsubscribe on server');
-        }
-
-        return await response.json();
     }
 
-    /**
-     * Convert base64 VAPID key to Uint8Array
-     */
     urlBase64ToUint8Array(base64String) {
-        const padding = '='.repeat((4 - base64String.length % 4) % 4);
+        const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
         const base64 = (base64String + padding)
-            .replace(/\-/g, '+')
+            .replace(/-/g, '+')
             .replace(/_/g, '/');
 
-        const rawData = window.atob(base64);
-        const outputArray = new Uint8Array(rawData.length);
-
-        for (let i = 0; i < rawData.length; ++i) {
-            outputArray[i] = rawData.charCodeAt(i);
-        }
-
-        return outputArray;
+        const rawData = atob(base64);
+        return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
     }
-}
-
-// Export for use
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = PushNotificationManager;
 }

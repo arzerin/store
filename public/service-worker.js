@@ -32,10 +32,14 @@ self.addEventListener('push', (event) => {
         body: data.body || 'You have a new notification',
         icon: data.icon || '/favicon.ico',
         badge: data.badge || '/favicon.ico',
-        tag: data.tag || 'notification',
+        image: data.image || null,                   // optional large image
+        tag: 'push-' + Date.now(), // UNIQUE every time
+        renotify: true,
         requireInteraction: data.requireInteraction || false,
         data: data.data || {},
-        actions: data.actions || []
+        //data: data.url || '/',                        // URL to open on click
+        actions: data.actions || [],
+        sound: data.sound || null                     // Note: Only supported on some OS
     };
 
     event.waitUntil(
